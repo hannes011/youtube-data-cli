@@ -1,7 +1,7 @@
 package org.bgf.youtube;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
-import com.google.api.client.json.jackson2.JacksonFactory;
+import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.youtube.YouTube;
 import org.bgf.youtube.auth.AuthManager;
 import org.bgf.youtube.fetcher.DataFetcher;
@@ -19,15 +19,16 @@ public class Main {
     public static void main(String[] args) {
         try {
             var credential = AuthManager.authorize();
+            if (credential == null || credential.getRefreshToken() == null) {
+                logger.error("No valid refresh token available. Exiting.");
+                System.exit(1);
+            }
             var httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-            var jsonFactory = JacksonFactory.getDefaultInstance();
-
+            var jsonFactory = GsonFactory.getDefaultInstance();
             var youtube = new YouTube.Builder(httpTransport, jsonFactory, credential)
                     .setApplicationName(APPLICATION_NAME)
                     .build();
-
             var storage = new StorageManager();
-
             Map<Integer, DataFetcher> menu = Map.of(
                     1, new org.bgf.youtube.fetcher.VideoDetailFetcher(),
                     2, new org.bgf.youtube.fetcher.PlaylistFetcher(),
@@ -35,10 +36,19 @@ public class Main {
                     4, new org.bgf.youtube.fetcher.SubtitleInfoFetcher(),
                     5, new org.bgf.youtube.fetcher.RecentVideosFetcher()
             );
-
+            Map<Integer, String> menuLabels = Map.of(
+                    1, "Video details",
+                    2, "Playlists",
+                    3, "Subscriptions",
+                    4, "Captions",
+                    5, "Recent Videos",
+                    0, "Exit"
+            );
             try (var scanner = new Scanner(System.in)) {
                 while (true) {
-                    System.out.println("Options:1 = Video details, 2 = Playlists, 3 = Subscriptions, 4 = Captions, 5 = RecentVideos, 0 = Exit ");
+                    System.out.println("Options:");
+                    menuLabels.forEach((k, v) -> System.out.printf("%d = %s\n", k, v));
+                    System.out.print("Choose option: ");
                     int choice;
                     try {
                         choice = Integer.parseInt(scanner.nextLine());

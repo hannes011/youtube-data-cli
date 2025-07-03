@@ -1,6 +1,5 @@
 package org.bgf.youtube.fetcher;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.services.youtube.YouTube;
 import org.bgf.youtube.storage.StorageManager;
 
@@ -9,7 +8,6 @@ import java.nio.file.*;
 import java.util.List;
 
 public class SubtitleInfoFetcher implements DataFetcher {
-    private final ObjectMapper mapper = new ObjectMapper();
 
     @Override
     public void fetch(YouTube youtube, StorageManager storage) throws Exception {

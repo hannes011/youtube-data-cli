@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Scanner;
 
 public class RecentVideosFetcher implements DataFetcher {
+    @SuppressWarnings("resource")
     @Override
     public void fetch(YouTube youtube, StorageManager storage) throws Exception {
         var sc = new Scanner(System.in);
