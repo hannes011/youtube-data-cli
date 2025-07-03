@@ -36,18 +36,11 @@ public class Main {
                     4, new org.bgf.youtube.fetcher.SubtitleInfoFetcher(),
                     5, new org.bgf.youtube.fetcher.RecentVideosFetcher()
             );
-            Map<Integer, String> menuLabels = Map.of(
-                    1, "Video details",
-                    2, "Playlists",
-                    3, "Subscriptions",
-                    4, "Captions",
-                    5, "Recent Videos",
-                    0, "Exit"
-            );
             try (var scanner = new Scanner(System.in)) {
                 while (true) {
                     System.out.println("Options:");
-                    menuLabels.forEach((k, v) -> System.out.printf("%d = %s\n", k, v));
+                    menu.forEach((k, v) -> System.out.printf("%d = %s\n", k, v.toString()));
+                    System.out.println("0 = Exit");
                     System.out.print("Choose option: ");
                     int choice;
                     try {

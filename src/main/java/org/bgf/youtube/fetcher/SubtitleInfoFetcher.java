@@ -27,4 +27,9 @@ public class SubtitleInfoFetcher implements DataFetcher {
             System.err.println("Caption check failed for " + id);
         }
     }
+
+    @Override
+    public String toString() {
+        return "Captions";
+    }
 }

@@ -36,3 +36,11 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Ignore all files in credentials, data, and tokens directories
+/credentials/*
+!/credentials/.gitkeep
+/data/*
+!/data/.gitkeep
+/tokens/*
+!/tokens/.gitkeep
