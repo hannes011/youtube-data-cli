@@ -2,30 +2,40 @@ package org.bgf.youtube.fetcher;
 
 import com.google.api.services.youtube.YouTube;
 import org.bgf.youtube.storage.StorageManager;
+import org.bgf.youtube.fetcher.util.QuotaManager;
 
-import java.io.IOException;
-import java.nio.file.*;
 import java.util.List;
+import java.util.Scanner;
 
 public class SubtitleInfoFetcher implements DataFetcher {
 
+    private final QuotaManager quotaManager = new QuotaManager();
+
     @Override
     public void fetch(YouTube youtube, StorageManager storage) throws Exception {
-        var dir = Path.of("data");
-        try (var stream = Files.list(dir)) {
-            stream.filter(p -> p.getFileName().toString().startsWith("thumb_"))
-                    .forEach(p -> checkCaptions(p, youtube));
+        String videoId = promptForVideoId();
+        var req = youtube.captions().list(List.of("snippet"), videoId);
+        var resp = quotaManager.executeWithQuotaCheck(req::execute);
+        for (var caption : resp.getItems()) {
+            System.out.printf("Caption: %s, Language: %s, Name: %s\n",
+                    caption.getId(), caption.getSnippet().getLanguage(), caption.getSnippet().getName());
+        }
+        if (resp.getItems().isEmpty()) {
+            System.out.printf("No caption found for: %s\n", videoId);
+            return;
+        }
+        try {
+            storage.save("captions_" + videoId, resp.getItems());
+            quotaManager.enforceRateLimit();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
-    private void checkCaptions(Path thumbFile, YouTube youtube) {
-        var id = thumbFile.getFileName().toString().split("_")[1];
-        try {
-            var resp = youtube.captions().list(List.of("snippet"), id).setVideoId(id).execute();
-            System.out.println(id + " captions: " + !resp.getItems().isEmpty());
-        } catch (IOException e) {
-            System.err.println("Caption check failed for " + id);
-        }
+    @SuppressWarnings("resource")
+    private static String promptForVideoId() {
+        System.out.print("Enter video ID for captions: ");
+        return new Scanner(System.in).nextLine();
     }
 
     @Override

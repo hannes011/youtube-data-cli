@@ -1,8 +1,10 @@
-package org.bgf.youtube.fetcher.quota;
+package org.bgf.youtube.fetcher.util;
 
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 
 public class QuotaManager {
+    public static final long DEFAULT_MIN_DELAY = 1200L;
+
     private final long minDelayMs;
     private long lastRequestTime = 0;
 
@@ -10,14 +12,25 @@ public class QuotaManager {
         this.minDelayMs = minDelayMs;
     }
 
-    public void enforceRateLimit() throws InterruptedException {
+    public QuotaManager() {
+        this(DEFAULT_MIN_DELAY);
+    }
+
+    public void enforceRateLimit() {
         long now = System.currentTimeMillis();
         long wait = lastRequestTime + minDelayMs - now;
-        if (wait > 0) Thread.sleep(wait);
+        if (wait > 0) {
+            try {
+                Thread.sleep(wait);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        }
         lastRequestTime = System.currentTimeMillis();
     }
 
-    public <T> T executeWithQuotaRetry(QuotaCallable<T> callable) throws Exception {
+    public <T> T executeWithQuotaCheck(QuotaCallable<T> callable) {
         try {
             return callable.call();
         } catch (GoogleJsonResponseException e) {
@@ -27,9 +40,10 @@ public class QuotaManager {
                 System.err.println("\n[YouTube API] Quota exceeded.\n" +
                         "Check your quota usage here: https://console.cloud.google.com/apis/api/youtube.googleapis.com/quotas\n" +
                         "If you need more quota, you can apply here: https://support.google.com/youtube/contact/yt_api_form\n");
-                throw e;
             }
-            throw e;
+            throw new RuntimeException(e);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 

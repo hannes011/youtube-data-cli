@@ -1,40 +1,53 @@
 package org.bgf.youtube.fetcher;
 
 import com.google.api.services.youtube.YouTube;
+import com.google.api.services.youtube.model.PlaylistItem;
 
-import org.bgf.youtube.fetcher.quota.QuotaManager;
+import com.google.api.services.youtube.model.PlaylistItemListResponse;
+import com.google.api.services.youtube.model.PlaylistListResponse;
+import org.bgf.youtube.fetcher.util.PaginationService;
 import org.bgf.youtube.storage.StorageManager;
 
+import java.io.IOException;
 import java.util.List;
 
 public class PlaylistFetcher implements DataFetcher {
-    private static final long MIN_DELAY_MS = 1200L;
-    private final QuotaManager quotaManager = new QuotaManager(MIN_DELAY_MS);
 
     @Override
     public void fetch(YouTube youtube, StorageManager storage) throws Exception {
-        var plReq = youtube.playlists().list(List.of("snippet,contentDetails"));
+        var plReq = youtube.playlists().list(List.of("snippet", "contentDetails"));
         plReq.setMine(true).setMaxResults(50L);
-        String pTok;
-        do {
-            var plResp = quotaManager.executeWithQuotaRetry(() -> plReq.execute());
-            for (var pl : plResp.getItems()) {
-                System.out.println("Playlist: " + pl.getSnippet().getTitle());
-                var itReq = youtube.playlistItems().list(List.of("snippet,contentDetails"));
-                itReq.setPlaylistId(pl.getId()).setMaxResults(50L);
-                String iTok;
-                do {
-                    var itRes = quotaManager.executeWithQuotaRetry(() -> itReq.execute());
-                    storage.save("playlist_" + pl.getId(), itRes.getItems());
-                    iTok = itRes.getNextPageToken();
-                    itReq.setPageToken(iTok);
-                    quotaManager.enforceRateLimit();
-                } while (iTok != null);
-            }
-            pTok = plResp.getNextPageToken();
-            plReq.setPageToken(pTok);
-            quotaManager.enforceRateLimit();
-        } while (pTok != null);
+        PaginationService.paginateStream(
+                plReq,
+                PlaylistListResponse::getNextPageToken,
+                YouTube.Playlists.List::setPageToken
+                ).forEach(plResp -> {
+                    for (var pl : plResp.getItems()) {
+                        System.out.println("Playlist: " + pl.getSnippet().getTitle());
+                        fetchPlaylist(youtube, storage, pl.getId());
+                    }
+                });
+    }
+
+    private void fetchPlaylist(YouTube youtube, StorageManager storage, String playlistId) {
+        try {
+            var itReq = youtube.playlistItems().list(List.of("snippet","contentDetails"));
+            itReq.setPlaylistId(playlistId).setMaxResults(50L);
+            PaginationService.paginateStream(
+                itReq,
+                    PlaylistItemListResponse::getNextPageToken,
+                    YouTube.PlaylistItems.List::setPageToken).forEach(itRes -> storePlaylist(storage, playlistId, itRes.getItems()));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void storePlaylist(StorageManager storage, String playlistId, List<PlaylistItem> items) {
+        try {
+            storage.save("playlist_" + playlistId, items);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
