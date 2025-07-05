@@ -1,6 +1,7 @@
 package org.bgf.youtube.fetcher;
 
 import com.google.api.services.youtube.YouTube;
+import com.google.api.services.youtube.model.Playlist;
 import com.google.api.services.youtube.model.PlaylistItem;
 
 import com.google.api.services.youtube.model.PlaylistItemListResponse;
@@ -21,32 +22,40 @@ public class PlaylistFetcher implements DataFetcher {
                 plReq,
                 PlaylistListResponse::getNextPageToken,
                 YouTube.Playlists.List::setPageToken
-                ).forEach(plResp -> {
-                    for (var pl : plResp.getItems()) {
-                        System.out.println("Playlist: " + pl.getSnippet().getTitle());
-                        fetchPlaylist(youtube, storage, pl.getId());
-                    }
-                });
+        ).forEach(plResp -> {
+            for (var pl : plResp.getItems()) {
+                System.out.println("Playlist: " + pl.getSnippet().getTitle());
+                storePlaylist(storage, pl.getId(), pl);
+            }
+        });
     }
 
-    private void fetchPlaylist(YouTube youtube, StorageManager storage, String playlistId) {
+    private void fetchPlaylistItems(YouTube youtube, StorageManager storage, String playlistId) {
         try {
-            var itReq = youtube.playlistItems().list(List.of("snippet","contentDetails"));
+            var itReq = youtube.playlistItems().list(List.of("snippet", "contentDetails"));
             itReq.setPlaylistId(playlistId).setMaxResults(50L);
             PaginationService.paginateStream(
-                itReq,
+                    itReq,
                     PlaylistItemListResponse::getNextPageToken,
-                    YouTube.PlaylistItems.List::setPageToken).forEach(itRes -> storePlaylist(storage, playlistId, itRes.getItems()));
+                    YouTube.PlaylistItems.List::setPageToken).forEach(itRes -> storePlaylistItems(storage, playlistId, itRes.getItems()));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    private void storePlaylist(StorageManager storage, String playlistId, List<PlaylistItem> items) {
+    private void storePlaylistItems(StorageManager storage, String playlistId, List<PlaylistItem> items) {
         try {
-            storage.save("playlist_" + playlistId, items);
+            storage.save("playlist_" + playlistId + "_items", items);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            System.err.println("Failed storing the result. " + e.getMessage());
+        }
+    }
+
+    private void storePlaylist(StorageManager storage, String playlistId, Playlist pl) {
+        try {
+            storage.save("playlist_" + playlistId, pl);
+        } catch (IOException e) {
+            System.err.println("Failed storing the result. " + e.getMessage());
         }
     }
 

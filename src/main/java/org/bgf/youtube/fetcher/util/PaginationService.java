@@ -26,7 +26,7 @@ public class PaginationService {
             Function<Resp, String> getNextPageToken,
             BiConsumer<Req, String> setPageToken
     ) {
-        var quotaManager = new QuotaManager();
+        var apiManager = new YouTubeApiManager();
         Iterator<Resp> iterator = new Iterator<>() {
             private final Req req = initialRequest;
             private Resp nextResp = null;
@@ -41,10 +41,10 @@ public class PaginationService {
                     done = true;
                     return false;
                 }
-                System.err.println("Blocked iterating pages to reduce quota usage");
-                //return false; // TODO for testing only to reduce quota usage
+                System.out.println("Blocked iterating pages to reduce quota usage");
+                return false; // TODO for testing only to reduce quota usage
                 //setPageToken.accept(req, nextToken);
-                return true;
+                // return true;
             }
             @Override
             public Resp next() {
@@ -53,9 +53,9 @@ public class PaginationService {
                 } else {
                     String nextToken = getNextPageToken.apply(nextResp);
                     setPageToken.accept(req, nextToken);
-                    quotaManager.enforceRateLimit();
+                    apiManager.enforceRateLimit();
                 }
-                nextResp = quotaManager.executeWithQuotaCheck(req::execute);
+                nextResp = apiManager.executeWithErrorCheck(req::execute);
                 return nextResp;
             }
         };

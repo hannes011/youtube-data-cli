@@ -5,12 +5,13 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.youtube.YouTube;
 import org.bgf.youtube.auth.AuthManager;
 import org.bgf.youtube.fetcher.DataFetcher;
+import org.bgf.youtube.fetcher.FetcherException;
 import org.bgf.youtube.storage.StorageManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
-import java.util.Scanner;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Main {
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
@@ -29,37 +30,22 @@ public class Main {
                     .setApplicationName(APPLICATION_NAME)
                     .build();
             var storage = new StorageManager();
-            Map<Integer, DataFetcher> menu = Map.of(
-                    1, new org.bgf.youtube.fetcher.VideoDetailFetcher(),
-                    2, new org.bgf.youtube.fetcher.PlaylistFetcher(),
-                    3, new org.bgf.youtube.fetcher.SubscriptionFetcher(),
-                    4, new org.bgf.youtube.fetcher.SubtitleInfoFetcher(),
-                    5, new org.bgf.youtube.fetcher.RecentVideosFetcher()
+            List<DataFetcher> fetchers = List.of(
+                new org.bgf.youtube.fetcher.VideoDetailFetcher(),
+                new org.bgf.youtube.fetcher.PlaylistFetcher(),
+                new org.bgf.youtube.fetcher.SubscriberFetcher(),
+                new org.bgf.youtube.fetcher.SubtitleInfoFetcher(),
+                new org.bgf.youtube.fetcher.RecentVideosFetcher()
             );
-            try (var scanner = new Scanner(System.in)) {
-                while (true) {
-                    System.out.println("Options:");
-                    menu.forEach((k, v) -> System.out.printf("%d = %s\n", k, v.toString()));
-                    System.out.println("0 = Exit");
-                    System.out.print("Choose option: ");
-                    int choice;
-                    try {
-                        choice = Integer.parseInt(scanner.nextLine());
-                    } catch (NumberFormatException e) {
-                        System.out.println("Invalid input, please enter a number.");
-                        continue;
-                    }
-                    if (choice == 0) break;
-                    var fetcher = menu.get(choice);
-                    if (fetcher != null) {
-                        try {
-                            fetcher.fetch(youtube, storage);
-                        } catch (Exception e) {
-                            logger.error("Error executing fetcher {}: {}", choice, e.getMessage(), e);
-                        }
-                    } else {
-                        System.out.println("Invalid choice, please select a valid option.");
-                    }
+            while (true) {
+                DataFetcher fetcher = PromptService.promptMenu("Choose an option:", fetchers, "Exit");
+                if (fetcher == null) break; // exit
+                try {
+                    fetcher.fetch(youtube, storage);
+                } catch (FetcherException e) {
+                    logger.error(e.getMessage());
+                } catch (Exception e) {
+                    logger.error("Error executing fetcher: {}", e.getMessage(), e);
                 }
             }
         } catch (Exception e) {

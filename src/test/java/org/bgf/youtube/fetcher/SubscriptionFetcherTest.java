@@ -30,11 +30,11 @@ class SubscriptionFetcherTest {
     @Mock
     StorageManager storage;
 
-    private SubscriptionFetcher fetcher;
+    private SubscriberFetcher fetcher;
 
     @BeforeEach
     void setUp() {
-        fetcher = new SubscriptionFetcher();
+        fetcher = new SubscriberFetcher();
     }
 
     @Test

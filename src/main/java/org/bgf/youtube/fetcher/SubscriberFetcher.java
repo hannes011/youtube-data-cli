@@ -9,19 +9,19 @@ import org.bgf.youtube.fetcher.util.PaginationService;
 import java.io.IOException;
 import java.util.List;
 
-public class SubscriptionFetcher implements DataFetcher {
+public class SubscriberFetcher implements DataFetcher {
     @Override
     public void fetch(YouTube youtube, StorageManager storage) throws Exception {
-        var subReq = youtube.subscriptions().list(List.of("snippet"));
-        subReq.setMine(true).setMaxResults(50L);
+        var subReq = youtube.subscriptions().list(List.of("subscriberSnippet"));
+        subReq.setMySubscribers(true).setFields("items(id,etag,subscriberSnippet(channelId,title))").setMaxResults(50L);
         PaginationService.paginateStream(
-            subReq,
+                subReq,
                 SubscriptionListResponse::getNextPageToken,
                 YouTube.Subscriptions.List::setPageToken
         ).forEach(subResp -> {
             for (var sub : subResp.getItems()) {
-                var chId = sub.getSnippet().getResourceId().getChannelId();
-                System.out.println("Channel: " + chId + " (" + sub.getSnippet().getTitle() + ")");
+                var chId = sub.getSubscriberSnippet().getChannelId();
+                System.out.println("Channel: " + chId + " (" + sub.getSubscriberSnippet().getTitle() + ")");
                 // var vidReq = youtube.search().list(List.of("snippet"));
                 // vidReq.setChannelId(chId)
                 //         .setType(List.of("video"))
@@ -32,9 +32,9 @@ public class SubscriptionFetcher implements DataFetcher {
                 //     vRes -> vRes.getNextPageToken(),
                 //     (req2, tok) -> req2.setPageToken(tok))
                 try {
-                    storage.save("sub_" + chId, sub.getSnippet());
+                    storage.save("sub_" + chId, sub);
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    System.err.println("Failed storing the result. " + e.getMessage());
                 }
             }
         });
@@ -42,7 +42,7 @@ public class SubscriptionFetcher implements DataFetcher {
 
     @Override
     public String toString() {
-        return "Subscriptions";
+        return "Subscribers";
     }
 
 }
