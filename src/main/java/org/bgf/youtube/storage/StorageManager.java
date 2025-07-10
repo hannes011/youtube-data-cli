@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.*;
 import java.net.URL;
 import java.nio.file.*;
-import java.time.Instant;
 
 public class StorageManager {
     private static final String BASE_DIR = "data";
@@ -16,16 +15,22 @@ public class StorageManager {
     }
 
     public <T> void save(String key, T data) throws IOException {
-        var file = Path.of(BASE_DIR, key + "_" + Instant.now().toEpochMilli() + ".json");
+        var file = Path.of(BASE_DIR, key + ".json");
         try (var out = Files.newBufferedWriter(file)) {
             mapper.writerWithDefaultPrettyPrinter().writeValue(out, data);
         }
         System.out.println("Saved: " + file);
     }
 
+    @SuppressWarnings("deprecation")
     public String downloadImage(String key, String imageUrl) throws IOException {
-        var ext = imageUrl.substring(imageUrl.lastIndexOf('.'));
-        var file = Path.of(BASE_DIR, key + "_" + Instant.now().toEpochMilli() + ext);
+        // Extract extension without query
+        int dotIdx = imageUrl.lastIndexOf('.');
+        int qIdx = imageUrl.indexOf('?', dotIdx);
+        int endIdx = imageUrl.length();
+        if (qIdx != -1) endIdx = qIdx;
+        String ext = dotIdx != -1 ? imageUrl.substring(dotIdx, endIdx) : "";
+        var file = Path.of(BASE_DIR, key + ext);
         try (var in = new URL(imageUrl).openStream();
              var out = Files.newOutputStream(file, StandardOpenOption.CREATE)) {
             in.transferTo(out);

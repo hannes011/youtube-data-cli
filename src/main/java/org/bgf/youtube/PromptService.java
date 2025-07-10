@@ -1,5 +1,7 @@
 package org.bgf.youtube;
 
+import com.google.common.collect.Ordering;
+
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -34,6 +36,7 @@ public class PromptService {
 
     public static <R, T> R promptMenu(String message, Map<R, T> options, String exitOption) {
         var returnOpts = new ArrayList<>(options.keySet());
+        returnOpts.sort(Ordering.usingToString());
         while (true) {
             System.out.println(message);
             int n = returnOpts.size();

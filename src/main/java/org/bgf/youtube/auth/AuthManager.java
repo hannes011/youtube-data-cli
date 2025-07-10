@@ -1,6 +1,7 @@
 package org.bgf.youtube.auth;
 
 import com.google.api.client.auth.oauth2.Credential;
+import com.google.api.client.auth.oauth2.StoredCredential;
 import com.google.api.client.googleapis.auth.oauth2.*;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
@@ -19,7 +20,7 @@ public class AuthManager {
     private static final String CREDENTIALS_FILE = "credentials/client_secrets.json";
     private static final String TOKENS_DIR = "tokens";
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
-    private static final List<String> SCOPES = List.of("https://www.googleapis.com/auth/youtube.readonly");
+    private static final List<String> SCOPES = List.of("https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/yt-analytics.readonly");
     private static final Logger logger = LoggerFactory.getLogger(AuthManager.class);
     private static final String REFRESH_TOKEN_FILE = "tokens/refresh_token.json";
     private static final Gson gson = new Gson();
@@ -48,9 +49,9 @@ public class AuthManager {
                             logger.info("Refresh token found, skipping OAuth flow.");
                             // Try to load credential from the flow's store
                             var credential = flow.loadCredential("user");
-                            if (credential == null || credential.getRefreshToken() == null) {
+                            if (credential == null || credential.getRefreshToken() == null || !credential.getRefreshToken().equals(map.get("refresh_token"))) {
                                 // Store the refresh token in the credential store
-                                var stored = new com.google.api.client.auth.oauth2.StoredCredential();
+                                var stored = new StoredCredential();
                                 stored.setRefreshToken((String) map.get("refresh_token"));
                                 flow.getCredentialDataStore().set("user", stored);
                                 credential = flow.loadCredential("user");

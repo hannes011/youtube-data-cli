@@ -41,10 +41,9 @@ public class PaginationService {
                     done = true;
                     return false;
                 }
-                System.out.println("Blocked iterating pages to reduce quota usage");
-                return false; // TODO for testing only to reduce quota usage
                 //setPageToken.accept(req, nextToken);
-                // return true;
+                System.out.println("++ Next Page ++");
+                return true;
             }
             @Override
             public Resp next() {

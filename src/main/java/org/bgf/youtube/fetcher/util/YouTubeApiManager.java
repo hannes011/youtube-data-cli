@@ -40,11 +40,12 @@ public class YouTubeApiManager {
                     throw new FetcherException("[YouTube API] Quota exceeded.\n" +
                             "Check your quota usage here: https://console.cloud.google.com/apis/api/youtube.googleapis.com/quotas\n" +
                             "If you need more quota, you can apply here: https://support.google.com/youtube/contact/yt_api_form\n", e);
-                // } else if (e.getDetails().getErrors().stream().anyMatch(err -> "insufficientPermissions".equals(err.getReason()))) {
+                }
+                //if (e.getDetails().getErrors().stream().anyMatch(err -> "insufficientPermissions".equals(err.getReason()))) {
                 //     throw new FetcherException("[YouTube API] Insufficient permissions.\n" +
                 //             "The requested operation requires additional scopes that were not granted during authentication.\n" +
                 //             "Please delete the tokens/refresh_token.json file and re-authenticate to grant the required permissions.\n", e);
-                }
+                //}
             }
             throw new FetcherException(e.getMessage(), e);
         } catch (Exception e) {

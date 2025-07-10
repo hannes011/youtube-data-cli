@@ -10,7 +10,6 @@ import org.bgf.youtube.storage.StorageManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class Main {
@@ -31,11 +30,11 @@ public class Main {
                     .build();
             var storage = new StorageManager();
             List<DataFetcher> fetchers = List.of(
-                new org.bgf.youtube.fetcher.VideoDetailFetcher(),
-                new org.bgf.youtube.fetcher.PlaylistFetcher(),
-                new org.bgf.youtube.fetcher.SubscriberFetcher(),
-                new org.bgf.youtube.fetcher.SubtitleInfoFetcher(),
-                new org.bgf.youtube.fetcher.RecentVideosFetcher()
+                new org.bgf.youtube.fetcher.VideoDetailsFetcher(),
+                new org.bgf.youtube.fetcher.ChannelListFetcher(),
+                new org.bgf.youtube.fetcher.PlaylistDetailsFetcher(),
+                new org.bgf.youtube.fetcher.RecentChangesFetcher(),
+                new org.bgf.youtube.fetcher.SubscriberCountFetcher()
             );
             while (true) {
                 DataFetcher fetcher = PromptService.promptMenu("Choose an option:", fetchers, "Exit");
