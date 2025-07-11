@@ -6,6 +6,7 @@ import com.google.api.client.googleapis.auth.oauth2.*;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
+import com.google.api.services.youtube.YouTube;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,20 +15,24 @@ import com.google.gson.Gson;
 import java.io.*;
 import java.security.GeneralSecurityException;
 import java.util.List;
-import java.util.Scanner;
+import java.util.ArrayList;
+import org.bgf.youtube.PromptService;
 
 public class AuthManager {
     private static final String CREDENTIALS_FILE = "credentials/client_secrets.json";
+    private static final String REFRESH_TOKENS_FILE = "tokens/refresh_tokens.json";
     private static final String TOKENS_DIR = "tokens";
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     private static final List<String> SCOPES = List.of("https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/yt-analytics.readonly");
     private static final Logger logger = LoggerFactory.getLogger(AuthManager.class);
-    private static final String REFRESH_TOKEN_FILE = "tokens/refresh_token.json";
     private static final Gson gson = new Gson();
 
-    public static Credential authorize() throws GeneralSecurityException {
-        // Check for existing refresh token file
-        File refreshTokenFile = new File(REFRESH_TOKEN_FILE);
+    public static class RefreshTokenEntry {
+        public String refresh_token;
+        public String channel_name;
+    }
+
+    public Credential authorize() throws GeneralSecurityException {
         try {
             var httpTransport = GoogleNetHttpTransport.newTrustedTransport();
             File credFile = new File(CREDENTIALS_FILE);
@@ -42,51 +47,25 @@ public class AuthManager {
                         .setDataStoreFactory(new FileDataStoreFactory(new File(TOKENS_DIR)))
                         .setAccessType("offline")
                         .build();
-                if (refreshTokenFile.exists()) {
-                    try (Reader reader = new FileReader(refreshTokenFile)) {
-                        var map = gson.fromJson(reader, java.util.Map.class);
-                        if (map != null && map.get("refresh_token") != null) {
-                            logger.info("Refresh token found, skipping OAuth flow.");
-                            // Try to load credential from the flow's store
-                            var credential = flow.loadCredential("user");
-                            if (credential == null || credential.getRefreshToken() == null || !credential.getRefreshToken().equals(map.get("refresh_token"))) {
-                                // Store the refresh token in the credential store
-                                var stored = new StoredCredential();
-                                stored.setRefreshToken((String) map.get("refresh_token"));
-                                flow.getCredentialDataStore().set("user", stored);
-                                credential = flow.loadCredential("user");
-                            }
-                            if (credential != null) credential.refreshToken();
-                            return credential;
-                        }
-                    } catch (Exception e) {
-                        logger.error("Failed to load refresh token: {}", e.getMessage(), e);
-                        // Fall through to OAuth flow
-                    }
+
+                // 1. Load all refresh tokens
+                List<RefreshTokenEntry> tokens = loadRefreshTokens();
+
+                // 2. Let user select an account or choose to add a new one
+                RefreshTokenEntry selected = selectAccount(tokens);
+                if (selected != null) {
+                    return useExistingToken(flow, selected);
                 }
-                // TODO // If not found, run OAuth flow and save refresh token
-                // var receiver = new LocalServerReceiver.Builder().setPort(8888).build();
-                // var credential = new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
-                // If not found, run manual OAuth flow and save refresh token
-                System.out.println("No credentials found. Please authenticate via the following URL:");
-                var authorizationUrl = flow.newAuthorizationUrl().setRedirectUri("urn:ietf:wg:oauth:2.0:oob").build();
-                System.out.println(authorizationUrl);
-                System.out.print("Enter the authorization code: ");
-                Scanner scanner = new Scanner(System.in);
-                String code = scanner.nextLine();
-                var tokenResponse = flow.newTokenRequest(code)
-                        .setRedirectUri("urn:ietf:wg:oauth:2.0:oob")
-                        .execute();
-                var credential = flow.createAndStoreCredential(tokenResponse, "user");
-                if (credential.getRefreshToken() != null) {
+
+                // 3. New account: prompt for authentication method
+                String method = promptAuthMethod();
+                Credential credential = authenticate(flow, method);
+                if (credential != null && credential.getRefreshToken() != null) {
                     credential.refreshToken();
-                    // Save refresh token to file
-                    try (Writer writer = new FileWriter(REFRESH_TOKEN_FILE)) {
-                        gson.toJson(java.util.Map.of("refresh_token", credential.getRefreshToken()), writer);
-                        logger.info("Refresh token saved to {}", REFRESH_TOKEN_FILE);
-                    } catch (IOException e) {
-                        logger.error("Failed to save refresh token: {}", e.getMessage(), e);
-                    }
+                    // 4. Fetch channel name for the new account
+                    String channelName = fetchChannelName(httpTransport, credential);
+                    // 5. Save new token
+                    saveNewToken(tokens, credential.getRefreshToken(), channelName);
                 }
                 return credential;
             }
@@ -96,6 +75,104 @@ public class AuthManager {
         } catch (Exception e) {
             logger.error("Unexpected error during authorization: {}", e.getMessage(), e);
             return null;
+        }
+    }
+
+    // Loads all refresh tokens from file
+    private List<RefreshTokenEntry> loadRefreshTokens() {
+        File file = new File(REFRESH_TOKENS_FILE);
+        if (!file.exists()) return new ArrayList<>();
+        try (Reader reader = new FileReader(file)) {
+            RefreshTokenEntry[] arr = gson.fromJson(reader, RefreshTokenEntry[].class);
+            if (arr == null) return new ArrayList<>();
+            return new ArrayList<>(List.of(arr));
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    // Presents a menu to select an account or choose to add a new one
+    private RefreshTokenEntry selectAccount(List<RefreshTokenEntry> tokens) {
+        if (tokens.isEmpty()) return null;
+        List<String> options = new ArrayList<>();
+        for (var t : tokens) options.add("Use @" + t.channel_name);
+        options.add("Use a new account");
+        String selectedName = PromptService.promptMenu("Which account do you want to use?", options, null);
+        if (selectedName != null && !selectedName.equals("Use a new account")) {
+            selectedName = selectedName.substring(5);
+            for (var t : tokens) {
+                if (t.channel_name.equals(selectedName)) return t;
+            }
+        }
+        return null;
+    }
+
+    // Uses an existing refresh token to create a Credential
+    private Credential useExistingToken(GoogleAuthorizationCodeFlow flow, RefreshTokenEntry entry) throws IOException {
+        var stored = new StoredCredential();
+        stored.setRefreshToken(entry.refresh_token);
+        flow.getCredentialDataStore().set("user", stored);
+        var credential = flow.loadCredential("user");
+        if (credential != null) credential.refreshToken();
+        return credential;
+    }
+
+    // Prompts the user for authentication method
+    private String promptAuthMethod() {
+        return PromptService.promptMenu("How do you want to authenticate?", List.of("Via authentication code", "Via direct authentication (browser callback)"), null);
+    }
+
+    // Handles authentication (manual code or browser callback)
+    private Credential authenticate(GoogleAuthorizationCodeFlow flow, String method) throws IOException {
+        if (method.equals("Via direct authentication (browser callback)")) {
+            var receiver = new com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver.Builder().setPort(8888).build();
+            // Remove any existing credential for 'user' to avoid session reuse
+            flow.getCredentialDataStore().delete("user");
+            return new com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
+        } else {
+            var authorizationUrl = flow.newAuthorizationUrl().setRedirectUri("urn:ietf:wg:oauth:2.0:oob").build();
+            System.out.println("No credentials found. Please authenticate via the following URL:");
+            System.out.println(authorizationUrl);
+            String code = PromptService.prompt("Enter the authorization code: ");
+            var tokenResponse = flow.newTokenRequest(code)
+                    .setRedirectUri("urn:ietf:wg:oauth:2.0:oob")
+                    .execute();
+            return flow.createAndStoreCredential(tokenResponse, "user");
+        }
+    }
+
+    // Fetches the channel name for the authenticated account
+    private String fetchChannelName(com.google.api.client.http.HttpTransport httpTransport, Credential credential) {
+        try {
+            var youtube = new YouTube.Builder(httpTransport, JSON_FACTORY, credential).setApplicationName("YouTubeDataCli").build();
+            var channelReq = youtube.channels().list(List.of("snippet")).setMine(true);
+            var channelResp = channelReq.execute();
+            if (channelResp.getItems() != null && !channelResp.getItems().isEmpty()) {
+                var snippet = channelResp.getItems().get(0).getSnippet();
+                return snippet.getTitle();
+            }
+        } catch (Exception e) {
+            logger.error("Failed to fetch channel name: {}", e.getMessage(), e);
+        }
+        return "unknown";
+    }
+
+    // Saves a new refresh token to the file
+    private void saveNewToken(List<RefreshTokenEntry> tokens, String refreshToken, String channelName) {
+        RefreshTokenEntry entry = new RefreshTokenEntry();
+        entry.refresh_token = refreshToken;
+        entry.channel_name = channelName;
+        tokens.add(entry);
+        saveRefreshTokens(tokens);
+        logger.info("Refresh token saved to {}", REFRESH_TOKENS_FILE);
+    }
+
+    // Writes the list of tokens to file
+    private void saveRefreshTokens(List<RefreshTokenEntry> tokens) {
+        try (Writer writer = new FileWriter(REFRESH_TOKENS_FILE)) {
+            gson.toJson(tokens, writer);
+        } catch (IOException e) {
+            logger.error("Failed to save refresh tokens: {}", e.getMessage(), e);
         }
     }
 }
