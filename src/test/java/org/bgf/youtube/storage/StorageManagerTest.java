@@ -20,7 +20,7 @@ class StorageManagerTest {
     @Test
     void testSaveWritesFile() throws Exception {
         TestData data = new TestData("abc", 123);
-        storage.save("test", data);
+        storage.save("test_1", data);
 
         List<File> files = Files.list(new File(BASE).toPath())
                 .map(p -> p.toFile())
