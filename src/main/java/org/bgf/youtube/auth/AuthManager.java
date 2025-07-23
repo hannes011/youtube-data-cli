@@ -3,8 +3,8 @@ package org.bgf.youtube.auth;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.auth.oauth2.StoredCredential;
 import com.google.api.client.googleapis.auth.oauth2.*;
+import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
-import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.youtube.YouTube;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
@@ -22,53 +22,53 @@ public class AuthManager {
     private static final String CREDENTIALS_FILE = "credentials/client_secrets.json";
     private static final String REFRESH_TOKENS_FILE = "tokens/refresh_tokens.json";
     private static final String TOKENS_DIR = "tokens";
-    private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     private static final List<String> SCOPES = List.of("https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/yt-analytics.readonly");
     private static final Logger logger = LoggerFactory.getLogger(AuthManager.class);
     private static final Gson gson = new Gson();
+
+    private final String applicationName;
+    private final NetHttpTransport httpTransport;
+    private final JsonFactory jsonFactory;
 
     public static class RefreshTokenEntry {
         public String refresh_token;
         public String channel_name;
     }
 
+    public AuthManager(String applicationName, NetHttpTransport httpTransport, JsonFactory jsonFactory) {
+        this.applicationName = applicationName;
+        this.httpTransport = httpTransport;
+        this.jsonFactory = jsonFactory;
+    }
+
     public Credential authorize() throws GeneralSecurityException {
         try {
             var httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-            File credFile = new File(CREDENTIALS_FILE);
-            if (!credFile.exists()) {
-                logger.error("Credentials file not found: {}", CREDENTIALS_FILE);
-                return null;
+            var flow = buildOfflineAuthFlow(httpTransport);
+
+            // 1. Load all refresh tokens
+            List<RefreshTokenEntry> tokens = loadRefreshTokens();
+
+            // 2. Let user select an account or choose to add a new one
+            RefreshTokenEntry selected = selectAccount(tokens);
+            if (selected != null) {
+                return refreshToken(flow, selected);
             }
-            try (InputStream in = new FileInputStream(credFile)) {
-                var clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, new InputStreamReader(in));
-                var flow = new GoogleAuthorizationCodeFlow.Builder(
-                        httpTransport, JSON_FACTORY, clientSecrets, SCOPES)
-                        .setDataStoreFactory(new FileDataStoreFactory(new File(TOKENS_DIR)))
-                        .setAccessType("offline")
-                        .build();
 
-                // 1. Load all refresh tokens
-                List<RefreshTokenEntry> tokens = loadRefreshTokens();
-
-                // 2. Let user select an account or choose to add a new one
-                RefreshTokenEntry selected = selectAccount(tokens);
-                if (selected != null) {
-                    return useExistingToken(flow, selected);
-                }
-
-                // 3. New account: prompt for authentication method
-                String method = promptAuthMethod();
-                Credential credential = authenticate(flow, method);
-                if (credential != null && credential.getRefreshToken() != null) {
-                    credential.refreshToken();
-                    // 4. Fetch channel name for the new account
-                    String channelName = fetchChannelName(httpTransport, credential);
-                    // 5. Save new token
-                    saveNewToken(tokens, credential.getRefreshToken(), channelName);
-                }
-                return credential;
+            // 3. New account: prompt for authentication method
+            String method = promptAuthMethod();
+            Credential credential = authenticate(flow, method);
+            if (credential != null && credential.getRefreshToken() != null) {
+                credential.refreshToken();
+                // 4. Fetch channel name for the new account
+                String channelName = fetchChannelName(httpTransport, credential);
+                // 5. Save new token
+                saveNewToken(tokens, credential.getRefreshToken(), channelName);
             }
+            return credential;
+        } catch (FileNotFoundException e) {
+            logger.error("Credentials file not found: {}. {}", CREDENTIALS_FILE, e.getMessage());
+            return null;
         } catch (IOException e) {
             logger.error("Failed to authorize with Google OAuth: {}", e.getMessage(), e);
             return null;
@@ -78,8 +78,30 @@ public class AuthManager {
         }
     }
 
+    public YouTube reauthenticate(Credential credential) throws GeneralSecurityException {
+        if (credential == null || credential.getRefreshToken() == null) {
+            logger.error("No valid refresh token available. Exiting.");
+            System.exit(1);
+        }
+        return new YouTube.Builder(this.httpTransport, this.jsonFactory, credential)
+                .setApplicationName(this.applicationName)
+                .build();
+    }
+
+    public GoogleAuthorizationCodeFlow buildOfflineAuthFlow(NetHttpTransport httpTransport) throws IOException {
+        File credFile = new File(CREDENTIALS_FILE);
+        try (InputStream in = new FileInputStream(credFile)) {
+            var clientSecrets = GoogleClientSecrets.load(this.jsonFactory, new InputStreamReader(in));
+            return new GoogleAuthorizationCodeFlow.Builder(
+                    httpTransport, this.jsonFactory, clientSecrets, SCOPES)
+                    .setDataStoreFactory(new FileDataStoreFactory(new File(TOKENS_DIR)))
+                    .setAccessType("offline")
+                    .build();
+        }
+    }
+
     // Loads all refresh tokens from file
-    private List<RefreshTokenEntry> loadRefreshTokens() {
+    public List<RefreshTokenEntry> loadRefreshTokens() {
         File file = new File(REFRESH_TOKENS_FILE);
         if (!file.exists()) return new ArrayList<>();
         try (Reader reader = new FileReader(file)) {
@@ -108,7 +130,7 @@ public class AuthManager {
     }
 
     // Uses an existing refresh token to create a Credential
-    private Credential useExistingToken(GoogleAuthorizationCodeFlow flow, RefreshTokenEntry entry) throws IOException {
+    public Credential refreshToken(GoogleAuthorizationCodeFlow flow, RefreshTokenEntry entry) throws IOException {
         var stored = new StoredCredential();
         stored.setRefreshToken(entry.refresh_token);
         flow.getCredentialDataStore().set("user", stored);
@@ -144,7 +166,7 @@ public class AuthManager {
     // Fetches the channel name for the authenticated account
     private String fetchChannelName(com.google.api.client.http.HttpTransport httpTransport, Credential credential) {
         try {
-            var youtube = new YouTube.Builder(httpTransport, JSON_FACTORY, credential).setApplicationName("YouTubeDataCli").build();
+            var youtube = new YouTube.Builder(httpTransport, this.jsonFactory, credential).setApplicationName("YouTubeDataCli").build();
             var channelReq = youtube.channels().list(List.of("snippet")).setMine(true);
             var channelResp = channelReq.execute();
             if (channelResp.getItems() != null && !channelResp.getItems().isEmpty()) {

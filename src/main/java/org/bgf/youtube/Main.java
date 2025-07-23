@@ -1,7 +1,6 @@
 package org.bgf.youtube;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
-import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.youtube.YouTube;
 import org.bgf.youtube.auth.AuthManager;
@@ -21,17 +20,16 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            var authManager = new AuthManager();
-            var httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-            var jsonFactory = GsonFactory.getDefaultInstance();
-            var youtube = reauthenticate(authManager, httpTransport, jsonFactory);
+            var authManager = new AuthManager(APPLICATION_NAME, GoogleNetHttpTransport.newTrustedTransport(), GsonFactory.getDefaultInstance());
+            var youtube = reauthenticate(authManager);
             var storage = new StorageManager();
             List<DataFetcher> fetchers = List.of(
                     new org.bgf.youtube.fetcher.VideoDetailsFetcher(),
                     new org.bgf.youtube.fetcher.ChannelListFetcher(),
                     new org.bgf.youtube.fetcher.PlaylistDetailsFetcher(),
                     new org.bgf.youtube.fetcher.RecentChangesFetcher(),
-                    new org.bgf.youtube.fetcher.SubscriberCountFetcher()
+                    new org.bgf.youtube.fetcher.SubscriberCountFetcher(),
+                    new org.bgf.youtube.fetcher.SubscriberCountForAllAccountsFetcher(authManager)
             );
             while (true) {
                 List<Object> menuOptions = new ArrayList<>(fetchers);
@@ -40,7 +38,7 @@ public class Main {
                 if (selected == null) break; // exit
                 switch (selected) {
                     case String s:
-                        youtube = reauthenticate(authManager, httpTransport, jsonFactory);
+                        youtube = reauthenticate(authManager);
                         break;
                     case DataFetcher fetcher:
                         try {
@@ -62,14 +60,8 @@ public class Main {
         System.out.println("Exited.");
     }
 
-    private static YouTube reauthenticate(AuthManager authManager, NetHttpTransport httpTransport, GsonFactory jsonFactory) throws GeneralSecurityException {
+    private static YouTube reauthenticate(AuthManager authManager) throws GeneralSecurityException {
         var credential = authManager.authorize();
-        if (credential == null || credential.getRefreshToken() == null) {
-            logger.error("No valid refresh token available. Exiting.");
-            System.exit(1);
-        }
-        return new YouTube.Builder(httpTransport, jsonFactory, credential)
-                .setApplicationName(APPLICATION_NAME)
-                .build();
+        return authManager.reauthenticate(credential);
     }
 }
